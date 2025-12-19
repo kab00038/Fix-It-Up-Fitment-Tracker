@@ -33,10 +33,10 @@ def create_tpms_diagram(car_data, make, model):
     # A dictionary to hold the text for each of the 4 corners
     # Default state is empty
     wheel_corners = {
-        'FL': {'text': "N/A", 'x': -2.5, 'y': 2.8, 'color': '#adadad'},
-        'FR': {'text': "N/A", 'x': 2.5,  'y': 2.8, 'color': '#adadad'},
-        'RL': {'text': "N/A", 'x': -2.5, 'y': -2.8, 'color': '#adadad'},
-        'RR': {'text': "N/A", 'x': 2.5,  'y': -2.8, 'color': '#adadad'}
+        'FL': {'text': "N/A", 'x': -2.9, 'y': 2.5,  'color': '#adadad'}, # Front Left
+        'FR': {'text': "N/A", 'x': 2.9,  'y': 2.5,  'color': '#adadad'}, # Front Right
+        'RL': {'text': "N/A", 'x': -2.9, 'y': -2.5, 'color': '#adadad'}, # Rear Left
+        'RR': {'text': "N/A", 'x': 2.9,  'y': -2.5, 'color': '#adadad'}  # Rear Right
     }
 
     # Helper to format the string
