@@ -144,7 +144,7 @@ if selected_make and selected_model:
     if not result.empty:
         # Draw the car
         fig = create_tpms_diagram(result, selected_make, selected_model)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         
         # Optional: Show the raw data below in an expander if they want details
         with st.expander("View Raw Data Table"):
