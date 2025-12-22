@@ -3,11 +3,25 @@ import pandas as pd
 import plotly.graph_objects as go
 
 st.set_page_config(page_title="Fitment Visualizer", page_icon="🏎️", layout="centered")
-# 1. Load Data
-@st.cache_data
+
+# 1. Load Data (Connected to Google Sheets)
+@st.cache_data(ttl=0) # ttl=0 ensures the app always checks for new updates
 def load_data():
-    # Make sure your CSV filename matches exactly!
-    df = pd.read_csv("fitment database.csv")
+    # --- CONFIGURATION ---
+    # Paste your Google Sheet ID inside the quotes below
+    # (It is the long string of text between "/d/" and "/edit" in your Sheet URL)
+    sheet_id = "1MVqjZt3hzIVOJ0acue90OQPHP62-TDIBDNTT2bHp3GU" 
+    # ---------------------
+
+    # Construct the CSV export URL
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+    
+    try:
+        # Read directly from the URL
+        df = pd.read_csv(url)
+    except Exception:
+        st.error("Could not load data. Please check:\n1. The Sheet ID is correct in the code.\n2. The Google Sheet is set to 'Anyone with the link'.")
+        st.stop()
     
     # Clean up strings
     df['make'] = df['make'].astype(str).str.strip()
@@ -20,8 +34,8 @@ def load_data():
 
 try:
     df = load_data()
-except FileNotFoundError:
-    st.error("Database file not found. Ensure 'fitment database.xlsx - Sheet1.csv' is in the folder.")
+except Exception as e:
+    st.error(f"An error occurred: {e}")
     st.stop()
 
 # 2. The Diagram Logic
@@ -30,8 +44,7 @@ def create_tpms_diagram(car_data, make, model):
     Draws a top-down car view and maps data to the 4 corners.
     """
     
-    # A dictionary to hold the text for each of the 4 corners
-    # Default state is empty
+    # Text coordinates centered next to wheels
     wheel_corners = {
         'FL': {'text': "N/A", 'x': -2.9, 'y': 2.5,  'color': '#adadad'}, # Front Left
         'FR': {'text': "N/A", 'x': 2.9,  'y': 2.5,  'color': '#adadad'}, # Front Right
@@ -79,7 +92,6 @@ def create_tpms_diagram(car_data, make, model):
         fillcolor="#3498db", opacity=0.3, line_width=0)
     
     # 3. Draw 4 Wheels
-    # Coords: [x_center, y_center]
     wheels = [(-1.6, 2.5), (1.6, 2.5), (-1.6, -2.5), (1.6, -2.5)]
     for wx, wy in wheels:
         fig.add_shape(type="rect", 
@@ -102,7 +114,7 @@ def create_tpms_diagram(car_data, make, model):
         )
 
     # Layout Cleaning
-    fig.update_xaxes(range=[-5, 5], visible=False, fixedrange=True)
+    fig.update_xaxes(range=[-5.5, 5.5], visible=False, fixedrange=True)
     fig.update_yaxes(range=[-5, 5], visible=False, fixedrange=True)
     fig.update_layout(
         title_text=f"{make} {model} Fitment",
@@ -144,7 +156,7 @@ if selected_make and selected_model:
     if not result.empty:
         # Draw the car
         fig = create_tpms_diagram(result, selected_make, selected_model)
-        st.plotly_chart(fig, width='stretch')
+        st.plotly_chart(fig, use_container_width=True)
         
         # Optional: Show the raw data below in an expander if they want details
         with st.expander("View Raw Data Table"):
