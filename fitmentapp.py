@@ -8,9 +8,12 @@ st.set_page_config(page_title="Fitment Visualizer", page_icon="🏎️", layout=
 @st.cache_data(ttl=0) # ttl=0 ensures the app always checks for new updates
 def load_data():
     # --- CONFIGURATION ---
-    # Paste your Google Sheet ID inside the quotes below
-    # (It is the long string of text between "/d/" and "/edit" in your Sheet URL)
-    sheet_id = "1MVqjZt3hzIVOJ0acue90OQPHP62-TDIBDNTT2bHp3GU" 
+    # loads google sheet ID from secrets
+    try:
+        sheet_id = st.secrets["connections"]["gsheet_id"]
+    except KeyError:
+        st.error("Google Sheet ID not found in secrets. Please add it under 'connections' with key 'gsheet_id'.")
+        st.stop()
     # ---------------------
 
     # Construct the CSV export URL
