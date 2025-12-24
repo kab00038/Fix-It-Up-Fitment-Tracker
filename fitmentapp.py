@@ -11,6 +11,7 @@ def load_data(gid):
     try:
         sheet_id = st.secrets["connections"]["gsheet_id"]
     except KeyError:
+        # Fallback for local testing if secrets aren't set up yet
         st.error("Google Sheet ID not found in secrets. Please check secrets.toml.")
         st.stop()
 
@@ -162,25 +163,38 @@ with tab2:
             # Get the row for this engine
             row = df_engine[df_engine['engine'] == sel_engine].iloc[0]
             
-            # 1. Main Stat (HP)
+            # 1. Main Stat (HP) - Displayed Big at the Top
             if 'hp' in row:
-                st.metric("Target HP", f"{row['hp']} HP", delta="Max Power")
+                st.metric("Target Horsepower", f"{row['hp']} HP")
             
-            # 2. Tuning Grid
+            # 2. Tuning Bars
             st.subheader("Tune Settings")
+            st.markdown("Bars represent value out of 100")
             
-            # Columns to display (excluding engine and hp which we already showed)
+            # Columns to display as bars
             settings_cols = ['power_limit', 'boost', 'ignition', 'fuel_mix', 'valve_timing']
             
-            # Create columns for the grid
-            cols = st.columns(len(settings_cols))
+            # Create a 2-column layout for the bars
+            grid_cols = st.columns(2)
             
             for i, col_name in enumerate(settings_cols):
                 if col_name in row:
-                    # Format title: "power_limit" -> "Power Limit"
+                    # Get value and ensure it is an integer for the progress bar
+                    raw_val = row[col_name]
+                    try:
+                        val_int = int(raw_val)
+                        # Ensure value is between 0 and 100 for visual safety
+                        display_val = max(0, min(100, val_int))
+                    except ValueError:
+                        val_int = 0
+                        display_val = 0
+                    
                     title = col_name.replace('_', ' ').title()
-                    # Display the value
-                    cols[i].metric(title, str(row[col_name]))
+                    
+                    # Alternate placing items in left/right columns
+                    with grid_cols[i % 2]:
+                        st.write(f"**{title}** ({val_int})")
+                        st.progress(display_val)
             
         else:
              st.info("Select an engine to view optimal tuning specs.")
