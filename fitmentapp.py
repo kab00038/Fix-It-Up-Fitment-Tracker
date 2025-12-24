@@ -26,27 +26,24 @@ def load_data(gid):
     # Standardize Column Names (lower case, strip spaces)
     df.columns = df.columns.str.lower().str.strip()
     
-    # Standardize Make/Model (common to both sheets)
-    if 'make' in df.columns:
-        df['make'] = df['make'].astype(str).str.strip()
-    if 'model' in df.columns:
-        df['model'] = df['model'].astype(str).str.strip()
-        
+    # Clean string columns if they exist
+    for col in ['make', 'model', 'position', 'engine']:
+        if col in df.columns:
+            df[col] = df[col].astype(str).str.strip()
+            
     return df
 
 # --- 2. Load Datasets ---
 try:
     # A. Load Fitment Data
-    # Defaults to "0" if not specified in secrets
     fitment_gid = st.secrets["connections"].get("fitment_gid", "0")
     df_fitment = load_data(fitment_gid)
     
-    # Fitment-specific cleanup: Normalize position names
+    # Fitment-specific cleanup
     if 'position' in df_fitment.columns:
-        df_fitment['position'] = df_fitment['position'].astype(str).str.lower().str.strip().str.replace(' ', '_')
+        df_fitment['position'] = df_fitment['position'].str.lower().str.replace(' ', '_')
 
     # B. Load Engine Data
-    # Defaults to "0" if not specified, so make sure to add it to secrets!
     engine_gid = st.secrets["connections"].get("engine_gid", "0") 
     df_engine = load_data(engine_gid)
 
@@ -54,11 +51,8 @@ except Exception as e:
     st.error(f"Error loading databases: {e}")
     st.stop()
 
-# --- 3. Diagram Logic (Your existing function) ---
+# --- 3. Diagram Logic (Fitment) ---
 def create_tpms_diagram(car_data, make, model):
-    """
-    Draws a top-down car view and maps data to the 4 corners.
-    """
     wheel_corners = {
         'FL': {'text': "N/A", 'x': -2.9, 'y': 2.5,  'color': '#adadad'},
         'FR': {'text': "N/A", 'x': 2.9,  'y': 2.5,  'color': '#adadad'},
@@ -93,20 +87,16 @@ def create_tpms_diagram(car_data, make, model):
 
     fig = go.Figure()
 
-    # Car Body
     fig.add_shape(type="rect", x0=-1.5, y0=-3.5, x1=1.5, y1=3.5,
         line=dict(color="#2c3e50", width=3), fillcolor="#ecf0f1", opacity=1)
-    # Windshield
     fig.add_shape(type="path", path="M -1.3,1 L 1.3,1 L 1.3,2.5 L -1.3,2.5 Z",
         fillcolor="#3498db", opacity=0.3, line_width=0)
-    # Wheels
     wheels = [(-1.6, 2.5), (1.6, 2.5), (-1.6, -2.5), (1.6, -2.5)]
     for wx, wy in wheels:
         fig.add_shape(type="rect", 
             x0=wx-0.3, y0=wy-0.6, x1=wx+0.3, y1=wy+0.6, 
             fillcolor="#1a1a1a", line_color="black"
         )
-    # Text
     for key, data in wheel_corners.items():
         fig.add_annotation(
             x=data['x'], y=data['y'], text=data['text'], showarrow=False,
@@ -134,8 +124,7 @@ with tab1:
     col1, col2 = st.columns(2)
     
     with col1:
-        makes_fit = sorted(df_fitment['make'].unique())
-        # Note the unique key="fit_make" to prevent conflict with the other tab
+        makes_fit = sorted(df_fitment['make'].unique()) if 'make' in df_fitment.columns else []
         sel_make_fit = st.selectbox("Make", options=makes_fit, index=None, key="fit_make", placeholder="Select Make")
     with col2:
         if sel_make_fit:
@@ -150,8 +139,6 @@ with tab1:
         if not res_fit.empty:
             fig = create_tpms_diagram(res_fit, sel_make_fit, sel_model_fit)
             st.plotly_chart(fig, use_container_width=True)
-            with st.expander("Raw Fitment Data"):
-                st.dataframe(res_fit)
         else:
             st.warning("No fitment data found.")
     elif not sel_make_fit:
@@ -163,38 +150,37 @@ with tab2:
     
     if df_engine.empty:
         st.warning("Engine database could not be loaded. Check your secrets.toml.")
+    elif 'engine' not in df_engine.columns:
+        st.error("Error: The engine dataset does not contain an 'engine' column.")
     else:
-        c1, c2 = st.columns(2)
-        with c1:
-            makes_eng = sorted(df_engine['make'].unique())
-            sel_make_eng = st.selectbox("Make", options=makes_eng, index=None, key="eng_make", placeholder="Select Make")
-        with c2:
-            if sel_make_eng:
-                models_eng = sorted(df_engine[df_engine['make'] == sel_make_eng]['model'].unique())
-                sel_model_eng = st.selectbox("Model", options=models_eng, index=None, key="eng_model", placeholder="Select Model")
-            else:
-                st.selectbox("Model", options=[], disabled=True, key="eng_model_ph", placeholder="Waiting...")
+        # Engine Selection
+        engines = sorted(df_engine['engine'].unique())
+        sel_engine = st.selectbox("Choose Engine", options=engines, index=None, key="eng_select", placeholder="Select an Engine...")
         
-        if sel_make_eng and sel_model_eng:
+        if sel_engine:
             st.divider()
-            res_eng = df_engine[(df_engine['make'] == sel_make_eng) & (df_engine['model'] == sel_model_eng)]
+            # Get the row for this engine
+            row = df_engine[df_engine['engine'] == sel_engine].iloc[0]
             
-            if not res_eng.empty:
-                for idx, row in res_eng.iterrows():
-                    st.subheader(f"⚙️ Tune Option #{idx+1}")
-                    
-                    # Dynamically get columns that aren't make/model
-                    spec_cols = [c for c in res_eng.columns if c not in ['make', 'model']]
-                    
-                    # Display in a grid
-                    cols = st.columns(3)
-                    for i, col_name in enumerate(spec_cols):
-                        val = row[col_name]
-                        title = col_name.replace('_', ' ').title()
-                        cols[i % 3].metric(title, str(val))
-                    st.markdown("---")
-            else:
-                st.warning("No engine data found for this car.")
-    
-    if not sel_make_eng and not df_engine.empty:
-         st.info("Select a car to view engine specs.")
+            # 1. Main Stat (HP)
+            if 'hp' in row:
+                st.metric("Target HP", f"{row['hp']} HP", delta="Max Power")
+            
+            # 2. Tuning Grid
+            st.subheader("Tune Settings")
+            
+            # Columns to display (excluding engine and hp which we already showed)
+            settings_cols = ['power_limit', 'boost', 'ignition', 'fuel_mix', 'valve_timing']
+            
+            # Create columns for the grid
+            cols = st.columns(len(settings_cols))
+            
+            for i, col_name in enumerate(settings_cols):
+                if col_name in row:
+                    # Format title: "power_limit" -> "Power Limit"
+                    title = col_name.replace('_', ' ').title()
+                    # Display the value
+                    cols[i].metric(title, str(row[col_name]))
+            
+        else:
+             st.info("Select an engine to view optimal tuning specs.")
