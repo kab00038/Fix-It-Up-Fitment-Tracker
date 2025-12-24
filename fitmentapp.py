@@ -2,69 +2,77 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
-st.set_page_config(page_title="Fitment Visualizer", page_icon="🏎️", layout="centered")
+st.set_page_config(page_title="Car Tuner Pro", page_icon="🏎️", layout="centered")
 
-# 1. Load Data (Connected to Google Sheets)
-@st.cache_data(ttl=0) # ttl=0 ensures the app always checks for new updates
-def load_data():
-    # --- CONFIGURATION ---
-    # loads google sheet ID from secrets
+# --- 1. Generic Load Data Function ---
+@st.cache_data(ttl=0)
+def load_data(gid):
+    # Retrieve ID from secrets
     try:
         sheet_id = st.secrets["connections"]["gsheet_id"]
     except KeyError:
-        st.error("Google Sheet ID not found in secrets. Please add it under 'connections' with key 'gsheet_id'.")
+        st.error("Google Sheet ID not found in secrets. Please check secrets.toml.")
         st.stop()
-    # ---------------------
 
-    # Construct the CSV export URL
-    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv"
+    # Construct URL with specific GID
+    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
     
     try:
-        # Read directly from the URL
         df = pd.read_csv(url)
     except Exception:
-        st.error("Could not load data. Please check:\n1. The Sheet ID is correct in the code.\n2. The Google Sheet is set to 'Anyone with the link'.")
+        st.error(f"Could not load data for GID {gid}. Check if the sheet exists and is public.")
         st.stop()
     
-    # Clean up strings
-    df['make'] = df['make'].astype(str).str.strip()
-    df['model'] = df['model'].astype(str).str.strip()
+    # Standardize Column Names (lower case, strip spaces)
+    df.columns = df.columns.str.lower().str.strip()
     
-    # Normalize position names (lowercase, underscores) to match logic
-    # e.g. "Front Left" -> "front_left"
-    df['position'] = df['position'].astype(str).str.lower().str.strip().str.replace(' ', '_')
+    # Standardize Make/Model (common to both sheets)
+    if 'make' in df.columns:
+        df['make'] = df['make'].astype(str).str.strip()
+    if 'model' in df.columns:
+        df['model'] = df['model'].astype(str).str.strip()
+        
     return df
 
+# --- 2. Load Datasets ---
 try:
-    df = load_data()
+    # A. Load Fitment Data
+    # Defaults to "0" if not specified in secrets
+    fitment_gid = st.secrets["connections"].get("fitment_gid", "0")
+    df_fitment = load_data(fitment_gid)
+    
+    # Fitment-specific cleanup: Normalize position names
+    if 'position' in df_fitment.columns:
+        df_fitment['position'] = df_fitment['position'].astype(str).str.lower().str.strip().str.replace(' ', '_')
+
+    # B. Load Engine Data
+    # Defaults to "0" if not specified, so make sure to add it to secrets!
+    engine_gid = st.secrets["connections"].get("engine_gid", "0") 
+    df_engine = load_data(engine_gid)
+
 except Exception as e:
-    st.error(f"An error occurred: {e}")
+    st.error(f"Error loading databases: {e}")
     st.stop()
 
-# 2. The Diagram Logic
+# --- 3. Diagram Logic (Your existing function) ---
 def create_tpms_diagram(car_data, make, model):
     """
     Draws a top-down car view and maps data to the 4 corners.
     """
-    
-    # Text coordinates centered next to wheels
     wheel_corners = {
-        'FL': {'text': "N/A", 'x': -2.9, 'y': 2.5,  'color': '#adadad'}, # Front Left
-        'FR': {'text': "N/A", 'x': 2.9,  'y': 2.5,  'color': '#adadad'}, # Front Right
-        'RL': {'text': "N/A", 'x': -2.9, 'y': -2.5, 'color': '#adadad'}, # Rear Left
-        'RR': {'text': "N/A", 'x': 2.9,  'y': -2.5, 'color': '#adadad'}  # Rear Right
+        'FL': {'text': "N/A", 'x': -2.9, 'y': 2.5,  'color': '#adadad'},
+        'FR': {'text': "N/A", 'x': 2.9,  'y': 2.5,  'color': '#adadad'},
+        'RL': {'text': "N/A", 'x': -2.9, 'y': -2.5, 'color': '#adadad'},
+        'RR': {'text': "N/A", 'x': 2.9,  'y': -2.5, 'color': '#adadad'}
     }
 
-    # Helper to format the string
     def fmt(row):
         return f"<b>{row['width_mm']} / {row['aspect_ratio']} R{row['rim_diameter_in']}</b>"
 
-    # Map the database rows to the visual corners
     for _, row in car_data.iterrows():
         pos = row['position']
         label = fmt(row)
         
-        # Logic to apply "Front" data to both FL and FR, etc.
         if pos in ['front', 'front_axle']:
             wheel_corners['FL'].update({'text': label, 'color': '#333'})
             wheel_corners['FR'].update({'text': label, 'color': '#333'})
@@ -83,89 +91,110 @@ def create_tpms_diagram(car_data, make, model):
         elif pos == 'back_right':
             wheel_corners['RR'].update({'text': label, 'color': '#333'})
 
-    # --- DRAWING WITH PLOTLY ---
     fig = go.Figure()
 
-    # 1. Draw Car Body (Simple Rounded Rectangle)
+    # Car Body
     fig.add_shape(type="rect", x0=-1.5, y0=-3.5, x1=1.5, y1=3.5,
         line=dict(color="#2c3e50", width=3), fillcolor="#ecf0f1", opacity=1)
-    
-    # 2. Draw Windshield (Visual cue for "Front")
+    # Windshield
     fig.add_shape(type="path", path="M -1.3,1 L 1.3,1 L 1.3,2.5 L -1.3,2.5 Z",
         fillcolor="#3498db", opacity=0.3, line_width=0)
-    
-    # 3. Draw 4 Wheels
+    # Wheels
     wheels = [(-1.6, 2.5), (1.6, 2.5), (-1.6, -2.5), (1.6, -2.5)]
     for wx, wy in wheels:
         fig.add_shape(type="rect", 
-            x0=wx-0.3, y0=wy-0.6, x1=wx+0.3, y1=wy+0.6, # Dimensions of tire
+            x0=wx-0.3, y0=wy-0.6, x1=wx+0.3, y1=wy+0.6, 
             fillcolor="#1a1a1a", line_color="black"
         )
-
-    # 4. Add the Text Annotations (The "TPMS" Readout)
+    # Text
     for key, data in wheel_corners.items():
         fig.add_annotation(
-            x=data['x'], 
-            y=data['y'],
-            text=data['text'],
-            showarrow=False,
-            font=dict(size=18, color=data['color']),
-            bgcolor="rgba(255,255,255,0.9)",
-            bordercolor=data['color'],
-            borderwidth=1,
-            borderpad=5
+            x=data['x'], y=data['y'], text=data['text'], showarrow=False,
+            font=dict(size=18, color=data['color']), bgcolor="rgba(255,255,255,0.9)",
+            bordercolor=data['color'], borderwidth=1, borderpad=5
         )
 
-    # Layout Cleaning
     fig.update_xaxes(range=[-5.5, 5.5], visible=False, fixedrange=True)
     fig.update_yaxes(range=[-5, 5], visible=False, fixedrange=True)
     fig.update_layout(
-        title_text=f"{make} {model} Fitment",
-        title_x=0.5,
-        width=600,
-        height=600,
-        margin=dict(l=10, r=10, t=50, b=10),
-        plot_bgcolor="white",
-        hovermode=False # Disable hover interactions for cleaner feel
+        title_text=f"{make} {model} Fitment", title_x=0.5,
+        width=600, height=600, margin=dict(l=10, r=10, t=50, b=10),
+        plot_bgcolor="white", hovermode=False
     )
-
     return fig
 
-# 3. UI Layout
+# --- 4. Main UI with Tabs ---
 
-st.title("🏎️ Fitment Visualizer")
-st.markdown("Select a vehicle to see the tire sizing configuration.")
+st.title("🏎️ Car Tuner Pro")
+tab1, tab2 = st.tabs(["🛞 Wheel Fitment", "🔧 Engine Tuning"])
 
-col1, col2 = st.columns(2)
+# === TAB 1: FITMENT ===
+with tab1:
+    st.header("Wheel Fitment")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        makes_fit = sorted(df_fitment['make'].unique())
+        # Note the unique key="fit_make" to prevent conflict with the other tab
+        sel_make_fit = st.selectbox("Make", options=makes_fit, index=None, key="fit_make", placeholder="Select Make")
+    with col2:
+        if sel_make_fit:
+            models_fit = sorted(df_fitment[df_fitment['make'] == sel_make_fit]['model'].unique())
+            sel_model_fit = st.selectbox("Model", options=models_fit, index=None, key="fit_model", placeholder="Select Model")
+        else:
+            st.selectbox("Model", options=[], disabled=True, key="fit_model_ph", placeholder="Waiting...")
 
-with col1:
-    all_makes = sorted(df['make'].unique())
-    selected_make = st.selectbox("Make", options=all_makes, index=None, placeholder="Select Make")
+    if sel_make_fit and sel_model_fit:
+        st.divider()
+        res_fit = df_fitment[(df_fitment['make'] == sel_make_fit) & (df_fitment['model'] == sel_model_fit)]
+        if not res_fit.empty:
+            fig = create_tpms_diagram(res_fit, sel_make_fit, sel_model_fit)
+            st.plotly_chart(fig, use_container_width=True)
+            with st.expander("Raw Fitment Data"):
+                st.dataframe(res_fit)
+        else:
+            st.warning("No fitment data found.")
+    elif not sel_make_fit:
+        st.info("Select a car to view wheels.")
 
-with col2:
-    if selected_make:
-        filtered_models = sorted(df[df['make'] == selected_make]['model'].unique())
-        selected_model = st.selectbox("Model", options=filtered_models, index=None, placeholder="Select Model")
+# === TAB 2: ENGINE TUNING ===
+with tab2:
+    st.header("Engine Specs")
+    
+    if df_engine.empty:
+        st.warning("Engine database could not be loaded. Check your secrets.toml.")
     else:
-        st.selectbox("Model", options=[], disabled=True, placeholder="Waiting for Make...")
-
-# 4. Display Logic
-if selected_make and selected_model:
-    st.divider()
-    
-    # Filter data for this car
-    result = df[(df['make'] == selected_make) & (df['model'] == selected_model)]
-    
-    if not result.empty:
-        # Draw the car
-        fig = create_tpms_diagram(result, selected_make, selected_model)
-        st.plotly_chart(fig, use_container_width=True)
+        c1, c2 = st.columns(2)
+        with c1:
+            makes_eng = sorted(df_engine['make'].unique())
+            sel_make_eng = st.selectbox("Make", options=makes_eng, index=None, key="eng_make", placeholder="Select Make")
+        with c2:
+            if sel_make_eng:
+                models_eng = sorted(df_engine[df_engine['make'] == sel_make_eng]['model'].unique())
+                sel_model_eng = st.selectbox("Model", options=models_eng, index=None, key="eng_model", placeholder="Select Model")
+            else:
+                st.selectbox("Model", options=[], disabled=True, key="eng_model_ph", placeholder="Waiting...")
         
-        # Optional: Show the raw data below in an expander if they want details
-        with st.expander("View Raw Data Table"):
-            st.dataframe(result)
-    else:
-        st.warning("No data found for this specific configuration.")
-else:
-    # Start screen
-    st.info("👆 Use the dropdowns above to load a car.")
+        if sel_make_eng and sel_model_eng:
+            st.divider()
+            res_eng = df_engine[(df_engine['make'] == sel_make_eng) & (df_engine['model'] == sel_model_eng)]
+            
+            if not res_eng.empty:
+                for idx, row in res_eng.iterrows():
+                    st.subheader(f"⚙️ Tune Option #{idx+1}")
+                    
+                    # Dynamically get columns that aren't make/model
+                    spec_cols = [c for c in res_eng.columns if c not in ['make', 'model']]
+                    
+                    # Display in a grid
+                    cols = st.columns(3)
+                    for i, col_name in enumerate(spec_cols):
+                        val = row[col_name]
+                        title = col_name.replace('_', ' ').title()
+                        cols[i % 3].metric(title, str(val))
+                    st.markdown("---")
+            else:
+                st.warning("No engine data found for this car.")
+    
+    if not sel_make_eng and not df_engine.empty:
+         st.info("Select a car to view engine specs.")
