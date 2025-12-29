@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import datetime
 
 st.set_page_config(page_title="Car Tuner Pro", page_icon="🏎️", layout="centered")
 
@@ -106,7 +107,7 @@ def create_tpms_diagram(car_data, make, model):
 
 # --- 4. Main UI ---
 st.title("🏎️ Car Tuner Pro")
-tab1, tab2, tab3 = st.tabs(["🛞 Wheel Fitment", "🔧 Engine Tuning", "💰 Car Values"])
+tab1, tab2, tab3, tab4 = st.tabs(["🛞 Wheel Fitment", "🔧 Engine Tuning", "💰 Car Values", "🛠️ Admin Tools"])
 
 # === TAB 1: FITMENT ===
 with tab1:
@@ -195,3 +196,96 @@ with tab3:
                 st.metric("Auction Rate", v_row['auction rate'])
     else:
         st.error("Column 'Car Name' not found in values sheet.")
+
+# === TAB 4: ADMIN TOOLS (PROTECTED) ===
+with tab4:
+    st.header("🛠️ Admin Tools")
+    
+    # 1. CHECK IF PASSWORD IS SET IN SECRETS
+    if "auth" not in st.secrets or "admin_password" not in st.secrets["auth"]:
+        st.error("⚠️ Admin password not configured. Please add [auth] admin_password to secrets.toml")
+        st.stop()
+
+    # 2. PASSWORD INPUT
+    # We use session state so the app "remembers" you are logged in
+    if "admin_logged_in" not in st.session_state:
+        st.session_state["admin_logged_in"] = False
+
+    if not st.session_state["admin_logged_in"]:
+        password_attempt = st.text_input("Enter Admin Password:", type="password")
+        
+        if password_attempt:
+            if password_attempt == st.secrets["auth"]["admin_password"]:
+                st.session_state["admin_logged_in"] = True
+                st.success("Access Granted!")
+                st.rerun() # Refresh to show tools immediately
+            else:
+                st.error("Incorrect Password.")
+    
+    # 3. SHOW TOOLS (Only if logged in)
+    if st.session_state["admin_logged_in"]:
+        # OPTIONAL: Logout button
+        if st.button("Logout"):
+            st.session_state["admin_logged_in"] = False
+            st.rerun()
+            
+        st.divider()
+        st.subheader("Update Market Database")
+        st.markdown("""
+        **Instructions:**
+        1. Paste the Discord text below.
+        2. Select the date for this data batch.
+        3. Download the CSV and **append** it to your Google Sheet.
+        """)
+        
+        # Date Picker
+        batch_date = st.date_input("Date for this batch:", datetime.date.today())
+        
+        raw_text = st.text_area("Paste Discord Text Here:", height=200, placeholder="Merquis G Wafer\nValue: 145,400,000...")
+        
+        if raw_text:
+            try:
+                entries = raw_text.split('━━━')
+                parsed_data = []
+                
+                for entry in entries:
+                    lines = [line.strip() for line in entry.strip().split('\n') if line.strip()]
+                    if not lines: continue
+                    
+                    car_name = lines[0]
+                    val = "0"
+                    junk = "N/A"
+                    auc = "N/A"
+                    
+                    for line in lines[1:]:
+                        if line.startswith("Value:"):
+                            val = line.replace("Value:", "").strip()
+                        elif line.startswith("Junkyard Rate:"):
+                            junk = line.replace("Junkyard Rate:", "").strip()
+                        elif line.startswith("Auction Rate:"):
+                            auc = line.replace("Auction Rate:", "").strip()
+                    
+                    parsed_data.append({
+                        "Date": batch_date,
+                        "Car Name": car_name,
+                        "Value": val,
+                        "Junkyard Rate": junk,
+                        "Auction Rate": auc
+                    })
+                
+                new_df = pd.DataFrame(parsed_data)
+                st.success(f"Parsed {len(new_df)} entries!")
+                
+                # Show preview
+                st.dataframe(new_df.head(), use_container_width=True)
+                
+                csv = new_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download CSV (Append to Google Sheet)",
+                    data=csv,
+                    file_name=f"market_update_{batch_date}.csv",
+                    mime="text/csv",
+                )
+                
+            except Exception as e:
+                st.error(f"Error parsing: {e}")
