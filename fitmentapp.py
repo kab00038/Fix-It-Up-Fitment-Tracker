@@ -107,7 +107,7 @@ def create_tpms_diagram(car_data, make, model):
 
 # --- 4. Main UI ---
 st.title("🏎️ Car Tuner Pro")
-tab1, tab2, tab3, tab4 = st.tabs(["🛞 Wheel Fitment", "🔧 Engine Tuning", "💰 Car Values", "🛠️ Admin Tools"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["🛞 Wheel Fitment", "🔧 Engine Tuning", "💰 Car Values", "🛠️ Admin Tools", "🤖 Chat Assistant"])
 
 # === TAB 1: FITMENT ===
 with tab1:
@@ -289,3 +289,34 @@ with tab4:
                 
             except Exception as e:
                 st.error(f"Error parsing: {e}")
+
+# === TAB 5: CHATBOT (NEW) ===
+with tab5:
+    st.header("🤖 Garage Assistant")
+    st.caption("Ask about fitment, tuning specs, or prices (e.g., 'Show me the tune for v8 4.0' or 'Fitment for Yaris')")
+
+    # 1. Initialize Chat History
+    if "messages" not in st.session_state:
+        st.session_state["messages"] = [{"role": "assistant", "content": "Hello! Which car or engine do you need help with?"}]
+
+    # 2. Display Chat Messages
+    for msg in st.session_state.messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # 3. Handle User Input
+    if prompt := st.chat_input("Type your question here..."):
+        # Add user message to history
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        # Generate Response
+        with st.chat_message("assistant"):
+            with st.spinner("Searching database..."):
+                # Call the helper function with the dataframes you already loaded
+                response_text = get_bot_response(prompt, df_fitment, df_engine, df_values)
+                st.markdown(response_text)
+        
+        # Add assistant response to history
+        st.session_state.messages.append({"role": "assistant", "content": response_text})
