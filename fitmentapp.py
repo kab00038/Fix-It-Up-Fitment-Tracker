@@ -104,6 +104,44 @@ def create_tpms_diagram(car_data, make, model):
         plot_bgcolor="white", hovermode=False)
     return fig
 
+# --- Helper: Simple Rule-Based Chatbot Logic ---
+def get_bot_response(user_input, df_fit, df_eng, df_val):
+    user_input = user_input.lower()
+    responses = []
+    
+    # 1. Search FITMENT Data
+    if not df_fit.empty:
+        # Check for Models
+        for index, row in df_fit.iterrows():
+            # Check if model name appears in the user's question
+            if str(row['model']).lower() in user_input:
+                responses.append(f"**🏎️ Fitment for {row['make']} {row['model']}:**")
+                responses.append(f"- Position: {row['position']}")
+                responses.append(f"- Specs: {row['width_mm']} / {row['aspect_ratio']} R{row['rim_diameter_in']}")
+    
+    # 2. Search ENGINE Data
+    if not df_eng.empty and 'engine' in df_eng.columns:
+        for index, row in df_eng.iterrows():
+            if str(row['engine']).lower() in user_input:
+                responses.append(f"**⚙️ Tuning for {row['engine']}:**")
+                responses.append(f"- HP: {row.get('hp', 'N/A')}")
+                responses.append(f"- Power Limit: {row.get('power_limit', 'N/A')}")
+                responses.append(f"- Boost: {row.get('boost', 'N/A')}")
+                responses.append(f"- Ignition: {row.get('ignition', 'N/A')}")
+    
+    # 3. Search VALUE Data
+    if not df_val.empty and 'car name' in df_val.columns:
+        for index, row in df_val.iterrows():
+            if str(row['car name']).lower() in user_input:
+                responses.append(f"**💰 Market Value for {row['car name']}:**")
+                responses.append(f"- Current Value: ${row.get('value', 'N/A')}")
+                responses.append(f"- Junkyard Rate: {row.get('junkyard rate', 'N/A')}")
+
+    # 4. Construct Final Reply
+    if responses:
+        return "\n\n".join(responses)
+    else:
+        return "I couldn't find a car or engine matching that name in the database. Try typing the exact Model (e.g., 'AE86') or Engine name (e.g., 'v8 4.0')."
 
 # --- 4. Main UI ---
 st.title("🏎️ Car Tuner Pro")
